@@ -5,6 +5,7 @@ import time
 import pickle
 import threading
 import random
+import sys
 
 """1、知乎访问单页具体内容不需要使用cookies，只需要构造user-agent即可"""
 base_path = os.getcwd()
@@ -37,24 +38,29 @@ def transcookies(rawcookies):
         cookies[i[0]] = i[1]
     return cookies
 
-def extract(target):
-    a = target.find('h2')
-    title = a.a.get_text()
-    link = a.a['href']
-    return (title, link)
+def analyze_raw_page():
+    def extract(target):
+        a = target.find('h2')
+        title = a.a.get_text()
+        link = a.a['href']
+        return (title, link)
 
+    def parseUrls(savedpage):
+        with open(savedpage,'r',encoding='utf-8') as f:
+            contents = f.read()
+        soup = bf(contents, 'lxml')
+        targets = soup.find_all(class_="css-8txec3")
+        container = []
+        for target in targets:
+            container.append(extract(target))
+        container = [["%03d_%s"%(each+1,container[each][0]), container[each][1]] for each in range(len(container))]
+        with open('文章及链接.pl', 'wb') as f:
+            pickle.dump(container, f)
+        return container
 
-def parseUrls(savedpage):
-    with open(savedpage,'r',encoding='utf-8') as f:
-        contents = f.read()
-    soup = bf(contents, 'lxml')
-    targets = soup.find_all(class_="css-8txec3")
-    container = []
-    for target in targets:
-        container.append(extract(target))
-    container = [["%03d_%s"%(each+1,container[each][0]), container[each][1]] for each in range(len(container))]
-    with open('文章及链接.pl', 'wb') as f:
-        pickle.dump(container, f)
+    file_location = r"%s" % input('请复制粘贴要提取的文件地址：')
+    data = parseUrls(file_location)
+    return data
 
 def dir_shift(folder):
     if not os.path.exists(folder):
@@ -72,7 +78,7 @@ def logs(errorinfo):
 def generate_md(index, link, multiple_or_not=False):
 
     def get_title(header):
-        dir_shift('pic')
+        dir_shift('pics')
         title = header.h1.get_text()
         icon = header.find('img')
         icon_link = icon['src']
@@ -84,12 +90,12 @@ def generate_md(index, link, multiple_or_not=False):
             with open(pic_name, 'wb') as f:
                 f.write(pic.content)
         except:
-            info = '图标[%s]获取失败'%icon_link
+            info = '图标 [%s] 获取失败 '%icon_link
             logs(info)
         finally:
             os.chdir('..')
             title_p = "# " + title + "\n"
-            author = "__![%s](/pic/%s)%s__\n"%(icon_name, pic_name, icon_name)
+            author = "__![%s](pics/%s)%s__\n"%(icon_name, pic_name, icon_name)
             with open(title + '.md', 'a', encoding='utf-8') as f:
                 f.write(title_p)
                 f.write(author)
@@ -97,7 +103,7 @@ def generate_md(index, link, multiple_or_not=False):
 
     def get_pic(figure_tag):
         dir_shift('pics')
-        link = figure_tag.img['src']
+        link = figure_tag.find('img')['src']
         pic_name = link.split('/')[-1]
         print('插入图片%s'%pic_name)
         try:
@@ -105,24 +111,31 @@ def generate_md(index, link, multiple_or_not=False):
             with open(pic_name, 'wb') as f:
                 f.write(response.content)
         except:
-            info = "图片[%s]获取失败"%link
+            info = "%s 图片 [%s] 获取失败"%(title,link)
             logs(info)
         finally:
             os.chdir('..')
-            pic_adress = 'pic/' + pic_name
+            pic_adress = 'pics/' + pic_name
             return pic_adress
+
+    def _further_deal_with_links(p_tag):
+        if p_tag.a:
+            link = p_tag.a.get_text()
+            return "<p><a>%s</a></p>\n"%link
+        else:
+            return str(p_tag) + '\n'
 
     def get_paragraph(body):
         paragrahs = body.children
         with open(title + '.md', 'a', encoding='utf-8') as f:
             for line in paragrahs:
-                if line.name == 'figure':
+                if line.find('figure'):
                     pic_adress = get_pic(line)
                     pic = "![界面截图](%s)"%pic_adress + "\n"
                     f.write(pic)
                     time.sleep(1)
                 else:
-                    line = str(line) + '\n'
+                    line = _further_deal_with_links(line)
                     f.write(line)
 
     def get_ending(article_tag):
@@ -157,7 +170,7 @@ def generate_md(index, link, multiple_or_not=False):
             processed.remove([index, link])
             # time.sleep(30)
         except:
-            error = '获取文章[%s]出错'%index
+            error = '获取文章 [%s] 出错'%index
             logs(error)
 
     if not multiple_or_not:
@@ -166,19 +179,6 @@ def generate_md(index, link, multiple_or_not=False):
         os.chdir('..')
     else:
         sub_main(index, link)
-
-def continuetask():
-    # could be a useless function
-    with open('文章及链接.pl', 'rb') as f:
-        original = pickle.load(f)
-    with open('剩余文件.pl', 'rb') as f:
-        now = pickle.load(f)
-    startpoint = len(original) - len(now)
-    if startpoint:
-        span = (startpoint, len(original) + 1)
-        return (now, span)
-    else:
-        return (now, [])
 
 def mutipletask():
     distributed_tasks = [data[i*10: (i+1)*10] for i in range(len(data)//10 +1)]
@@ -191,6 +191,8 @@ def mutipletask():
             threads.append(temp)
             temp.start()
         end = [_.join() for _ in threads]
+    print('\n获取成功，暂停程序1分钟，免得被封....\n')
+    time.sleep(60)
 
 def single_line_task():
     for each in data:
@@ -210,16 +212,19 @@ def single_line_task():
                     pickle.dump(processed, f)
 
 if __name__=="__main__":
-    if not os.path.exists('剩余文件.pl'):
-        with open('文章及链接.pl', 'rb') as f:
-            data = pickle.load(f)
+    choice = input('是否首先解析文件？yes/no: ')
+    if choice == 'yes':
+        data = analyze_raw_page()
+    elif choice == 'no':
+        if not os.path.exists('剩余文件.pl'):
+            with open('文章及链接.pl', 'rb') as f:
+                data = pickle.load(f)
+        else:
+            left_over = base_path + "\\剩余文件.pl"
+            with open(left_over, 'rb') as f:
+                data = pickle.load(f)
     else:
-        left_over = base_path + "\\剩余文件.pl"
-        with open(left_over, 'rb') as f:
-            data = pickle.load(f)
+        print('输入错误，程序终止')
+        sys.exit()
     processed = data.copy()
-    # for grouped_tasks in distributed_tasks:
-    #     mutipletask(grouped_tasks)
-    #     print('\n获取成功，暂停程序1分钟，免得被封....\n')
-    #     time.sleep(60)
     single_line_task()
