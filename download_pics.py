@@ -27,8 +27,6 @@ def download(container, title):
     zhihu.dir_shift('..')
 
 def main():
-    # file = args.file_object + '.pl'
-    # print(file)
     with open(args.file_object, 'rb') as f:
         container = pickle.load(f)
     download(container[1:], container[0])
@@ -36,4 +34,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # pass

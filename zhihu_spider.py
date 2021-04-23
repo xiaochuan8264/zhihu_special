@@ -1,5 +1,6 @@
 import requests as rq
 from bs4 import BeautifulSoup as bf
+from gui import window
 import os, time, pickle, threading, random, sys
 from stopit import threading_timeoutable as Timeout
 """1、知乎访问单页具体内容不需要使用cookies，只需要构造user-agent即可"""
@@ -24,19 +25,36 @@ def analyze_raw_page():
         link = a.a['href']
         return (title, link)
 
+    def extract2(target):
+        a = target.find('h3')
+        title = a.get_text()
+        link = a.parent['href']
+        return (title, link)
+
     def parseUrls(savedpage):
         with open(savedpage,'r',encoding='utf-8') as f:
             contents = f.read()
         soup = bf(contents, 'lxml')
         targets = soup.find_all(class_="css-8txec3")
-        container = []
-        for target in targets:
-            container.append(extract(target))
-        container = [["%03d_%s"%(each+1,container[each][0]), container[each][1]] for each in range(len(container))]
-        with open('文章及链接.pl', 'wb') as f:
-            pickle.dump(container, f)
-        return container
-    file_location = r"%s" % input('请复制粘贴要提取的文件地址：')
+        if targets:
+            container = []
+            for target in targets:
+                container.append(extract(target))
+            container = [["%03d_%s"%(each+1,container[each][0]), container[each][1]] for each in range(len(container))]
+            with open('文章及链接.pl', 'wb') as f:
+                pickle.dump(container, f)
+            return container
+        else:
+            targets = soup.find_all(class_="ArticleItem")
+            container = []
+            for target in targets:
+                container.append(extract2(target))
+            container = [["%03d_%s"%(each+1,container[each][0]), container[each][1]] for each in range(len(container))]
+            with open('文章及链接.pl', 'wb') as f:
+                pickle.dump(container, f)
+            return container
+    # file_location = r"%s" % input('请复制粘贴要提取的文件地址：')
+    file_location = r"%s" % win.path
     data = parseUrls(file_location)
     return data
 
@@ -187,7 +205,7 @@ def generate_md(index, link, multiple_or_not=False):
         pics_collected = get_paragraph(body, title)
         get_ending(article, title)
         print('︹'*15)
-        print('\t后台插入文章图片，共%d张' % len(pics_collected))
+        print('  后台插入文章图片，共%d张' % len(pics_collected))
         download_pics(pics_collected, title)
         # download_pics(pics_collected, title, timeout=120)
         # os.chdir(new_base)
@@ -231,7 +249,7 @@ def single_line_task():
                 with open(left_over,'wb') as f:
                     pickle.dump(processed, f)
 
-if __name__=="__main__":
+def main():
     choice = input('是否首先解析文件？yes/no: ')
     if choice == 'yes':
         data = analyze_raw_page()
@@ -245,5 +263,14 @@ if __name__=="__main__":
     else:
         print('输入错误，程序终止')
         sys.exit()
+    processed = data.copy()
+    single_line_task()
+
+
+if __name__=="__main__":
+    win = window()
+    dir_shift(win.filename)
+    base_path = os.getcwd()
+    data = analyze_raw_page()
     processed = data.copy()
     single_line_task()
